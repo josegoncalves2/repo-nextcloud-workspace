@@ -1,4 +1,27 @@
 /* Independent icon decoration and color mode. Loaded after decoration styles so icon choices win. */
+/* Normalize app-provided monochrome SVGs. In light palettes glyphs are dark; in dark
+   palettes they are light. Window-title icons follow window chrome, while launchers,
+   menus and task icons follow the independently selected icon palette. */
+#desktop-root.desktop-decoration-light .desktop-window-icon img.desktop-app-glyph {
+    filter: brightness(0) saturate(100%) !important;
+}
+#desktop-root:not(.desktop-decoration-light) .desktop-window-icon img.desktop-app-glyph {
+    filter: brightness(0) saturate(100%) invert(1) !important;
+}
+#desktop-root.desktop-icon-light .desktop-task-icon img.desktop-app-glyph,
+#desktop-root.desktop-icon-light .desktop-app-menu-icon img.desktop-app-glyph,
+#desktop-root.desktop-icon-light .desktop-app-shortcut-circle img.desktop-app-glyph,
+#desktop-root.desktop-icon-light .desktop-fav-icon img.desktop-app-glyph,
+body.desktop-icon-light .desktop-start-menu .desktop-app-menu-icon img.desktop-app-glyph {
+    filter: brightness(0) saturate(100%) !important;
+}
+#desktop-root:not(.desktop-icon-light) .desktop-task-icon img.desktop-app-glyph,
+#desktop-root:not(.desktop-icon-light) .desktop-app-menu-icon img.desktop-app-glyph,
+#desktop-root:not(.desktop-icon-light) .desktop-app-shortcut-circle img.desktop-app-glyph,
+#desktop-root:not(.desktop-icon-light) .desktop-fav-icon img.desktop-app-glyph,
+body:not(.desktop-icon-light) .desktop-start-menu .desktop-app-menu-icon img.desktop-app-glyph {
+    filter: brightness(0) saturate(100%) invert(1) !important;
+}
 #desktop-root[data-icon-decoration="standard"] .desktop-pinned-app {
     border: 1px solid var(--desktop-panel-border) !important;
     border-radius: 12px !important;

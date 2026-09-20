@@ -3,6 +3,16 @@
 All notable changes to the Desktop app are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## 0.18.3 – 2026-09-20
+
+### Fixed
+- Delegated same-origin camera and microphone access through the Desktop page and app iframe boundaries so Nextcloud Talk can enumerate devices in Chromium-based browsers, while keeping cross-origin frames blocked from those devices.
+- Kept window-specific titles independent from launcher metadata refreshes, preventing file, folder, editor, and other dynamic window titles from intermittently reverting to the app name.
+- Kept iframe accessible titles synchronized with visible window titles.
+- Normalized app glyphs to dark foregrounds on light surfaces and light foregrounds on dark surfaces across window title bars, taskbar and dock entries, desktop and Apps-menu launchers, and embedded Nextcloud app/settings pages.
+- Kept folder windows opened from the desktop on the Files app glyph instead of the white Nextcloud infinity mark, while restoring the administrator-configured Nextcloud logo on the separate new-tab shortcut.
+- Upgraded restored same-host app-window URLs from HTTP to the active HTTPS origin so saved windows remain usable when the development instance moves to TLS.
+
 ## 0.18.2 – 2026-09-07
 
 ### Added

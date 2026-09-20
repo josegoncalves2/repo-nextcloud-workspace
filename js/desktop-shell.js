@@ -121,12 +121,9 @@
     }
 
     function copyHeaderLogoToTaskbar() {
-        if (!desktopLogo || desktopLogo.dataset.logoCopied === 'true') return;
+        if (!desktopLogo) return;
         const originalLogo = document.querySelector('#nextcloud .logo, #nextcloud .logo-icon');
-        if (!originalLogo) {
-
-            return;
-        }
+        if (!originalLogo) return;
         const clonedLogo = originalLogo.cloneNode(true);
         clonedLogo.removeAttribute('id');
         clonedLogo.setAttribute('aria-hidden', 'true');
@@ -137,9 +134,8 @@
         }
         desktopLogo.replaceChildren(clonedLogo);
         desktopLogo.dataset.logoCopied = 'true';
-        applyLogoContrast();
-
     }
+
 
     const THEME_VARIABLES = [
         '--color-main-background', '--color-main-background-rgb', '--color-main-text', '--color-primary', '--color-primary-text',
@@ -179,22 +175,6 @@
 
     }
 
-    function applyLogoContrast() {
-        // The taskbar logo is cloned from the NC header, where it is the light variant (for the dark
-        // header). On a bright taskbar panel that variant is invisible, so darken it via filter.
-        if (!desktopLogo || desktopLogo.dataset.logoCopied !== 'true') return;
-        const node = desktopLogo.firstElementChild;
-        if (!node) return;
-        const readLum = (el) => {
-            const m = el && getComputedStyle(el).backgroundColor.match(/[\d.]+/g);
-            if (!m) return null;
-            const [r, g, b, a = 1] = m.map(Number);
-            if (a === 0) return null;
-            return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-        };
-        const lum = readLum(document.querySelector('.desktop-taskbar')) ?? readLum(document.body) ?? 1;
-        node.style.setProperty('filter', lum > 0.5 ? 'invert(1) hue-rotate(180deg) saturate(1.2)' : 'none', 'important');
-    }
 
     function applyIconTextContrast(sourceDocument = document) {
         // Light theme -> dark label text -> needs a white shadow to stand out on dark wallpapers.
@@ -223,7 +203,7 @@
     function syncAppearance(sourceDocument = document) {
         syncDesktopTheme(sourceDocument);
         applyUserBackground(sourceDocument);
-        applyLogoContrast();
+        copyHeaderLogoToTaskbar();
         applyIconTextContrast(sourceDocument);
     }
 
@@ -299,6 +279,41 @@
     function refreshThemingIframeMonitor(iframe) {
         if (isThemingSettingsUrl(iframeHref(iframe))) monitorThemingIframe(iframe);
         else stopThemingIframeMonitor(iframe);
+    }
+
+    function applyEmbeddedIconContrast(doc) {
+        if (!doc?.documentElement) return;
+        const light = root.classList.contains('desktop-theme-light');
+        doc.documentElement.classList.toggle('desktop-workspace-light-icons-on-dark', !light);
+        doc.documentElement.classList.toggle('desktop-workspace-dark-icons-on-light', light);
+        if (doc.head?.querySelector('style[data-desktop-icon-contrast="true"]')) return;
+        const style = doc.createElement('style');
+        style.dataset.desktopIconContrast = 'true';
+        style.textContent = `
+            /* Nextcloud app glyphs are often fixed black SVG images. Normalize monochrome
+               app glyphs against the active surface instead of relying on source artwork. */
+            :root.desktop-workspace-dark-icons-on-light img[src*="/img/app.svg"],
+            :root.desktop-workspace-dark-icons-on-light img[src*="/img/app-dark.svg"],
+            :root.desktop-workspace-dark-icons-on-light img[src*="/img/app-light.svg"],
+            :root.desktop-workspace-dark-icons-on-light .app-icon img,
+            :root.desktop-workspace-dark-icons-on-light .app-image img {
+                filter: brightness(0) saturate(100%) !important;
+            }
+            :root.desktop-workspace-light-icons-on-dark img[src*="/img/app.svg"],
+            :root.desktop-workspace-light-icons-on-dark img[src*="/img/app-dark.svg"],
+            :root.desktop-workspace-light-icons-on-dark img[src*="/img/app-light.svg"],
+            :root.desktop-workspace-light-icons-on-dark .app-icon img,
+            :root.desktop-workspace-light-icons-on-dark .app-image img {
+                filter: brightness(0) saturate(100%) invert(1) !important;
+            }
+        `;
+        doc.head?.appendChild(style);
+    }
+
+    function syncEmbeddedIconContrast() {
+        document.querySelectorAll('iframe.desktop-window-iframe').forEach((iframe) => {
+            try { applyEmbeddedIconContrast(iframe.contentDocument); } catch (error) { /* cross-origin */ }
+        });
     }
 
     function loadState() {
@@ -420,6 +435,7 @@
         root.classList.toggle('desktop-icon-light', iconLight);
         document.body.dataset.desktopIconDecoration = root.dataset.iconDecoration;
         document.body.classList.toggle('desktop-icon-light', iconLight);
+        syncEmbeddedIconContrast();
         if ('windowControlsSide' in settings) root.dataset.windowControlsSide = settings.windowControlsSide === 'left' ? 'left' : 'right';
         if ('shellMode' in settings) root.dataset.shellMode = settings.shellMode === 'dock' ? 'dock' : 'taskbar';
         if ('dockAlwaysVisible' in settings) root.dataset.dockAlwaysVisible = settings.dockAlwaysVisible ? 'true' : 'false';
@@ -543,20 +559,17 @@
                 const currentTitle = entry.window.querySelector('[data-window-title]')?.textContent || entry.app.name;
                 const settingsTitle = dt('Desktop Settings');
                 if (currentTitle === entry.app.name || currentTitle === t('Desktop Settings') || currentTitle === 'Desktop Settings') {
-                    entry.app.name = settingsTitle;
-                    entry.window.querySelector('[data-window-title]').textContent = settingsTitle;
-                    entry.task.querySelector('[data-task-title]').textContent = settingsTitle;
-                    entry.task.title = settingsTitle;
-                    entry.task.setAttribute('aria-label', settingsTitle);
+                    setWindowMeta(entry.app.id, { title: settingsTitle });
                 }
                 return;
             }
-            const next = appById(nextApps, entry.app.id);
-            const previous = appById(previousApps, entry.app.id);
+            const navigationId = entry.app.sourceAppId || entry.app.id;
+            const next = appById(nextApps, navigationId);
+            const previous = appById(previousApps, navigationId);
             if (!next) return;
             const currentTitle = entry.window.querySelector('[data-window-title]')?.textContent || entry.app.name;
-            const titleWasAppName = currentTitle === entry.app.name || currentTitle === previous?.name;
-            entry.app = { ...entry.app, ...next };
+            const titleWasAppName = currentTitle === entry.app.navigationName || currentTitle === previous?.name;
+            entry.app = { ...entry.app, ...next, navigationName: next.name || entry.app.navigationName };
             if (titleWasAppName && next.name && next.name !== currentTitle) setWindowMeta(entry.app.id, { title: next.name, icon: next.icon || entry.app.icon });
         });
 
@@ -669,7 +682,7 @@
         if (location === 'menu' && app.target) {
             button.dataset.externalNewTabTooltip = t('Opens in new tab');
         }
-        button.innerHTML = `<span class="desktop-app-menu-icon">${app.icon ? `<img alt="" draggable="false" src="${escapeHtml(app.icon)}">` : escapeHtml(app.name.slice(0, 1))}</span><span class="desktop-app-menu-label">${escapeHtml(app.name)}</span>`;
+        button.innerHTML = `<span class="desktop-app-menu-icon">${app.icon ? `<img class="desktop-app-glyph" alt="" draggable="false" src="${escapeHtml(app.icon)}">` : escapeHtml(app.name.slice(0, 1))}</span><span class="desktop-app-menu-label">${escapeHtml(app.name)}</span>`;
         button.addEventListener('click', () => launchApp(app));
         button.addEventListener('contextmenu', (event) => openAppContextMenu(app, event, location));
         return button;
@@ -1118,7 +1131,8 @@
     function setWindowIcon(entry, icon) {
         if (!entry || !icon) return;
         entry.app.icon = String(icon);
-        const html = `<img alt="" draggable="false" src="${escapeHtml(entry.app.icon)}">`;
+        const appGlyph = /\/img\/app(?:-dark|-light)?\.svg(?:[?#]|$)/i.test(entry.app.icon);
+        const html = `<img${appGlyph ? ' class="desktop-app-glyph"' : ''} alt="" draggable="false" src="${escapeHtml(entry.app.icon)}">`;
         const windowIcon = entry.window.querySelector('.desktop-window-icon');
         const taskIcon = entry.task.querySelector('.desktop-task-icon');
         if (windowIcon) windowIcon.innerHTML = html;
@@ -1135,6 +1149,8 @@
             entry.task.querySelector('[data-task-title]').textContent = entry.app.name;
             entry.task.title = entry.app.name;
             entry.task.setAttribute('aria-label', entry.app.name);
+            const iframe = entry.window.querySelector('iframe.desktop-window-iframe');
+            if (iframe) iframe.title = entry.app.name;
         }
         const subtitle = meta.subtitle || '';
         entry.app.subtitle = subtitle;
@@ -1627,9 +1643,14 @@
     }
 
     function prepareWindowApp(app, restoredState = null) {
-        if (restoredState) return { ...app, id: restoredState.appId || app.id, sourceAppId: restoredState.sourceAppId || app.id };
-        if (!app.multiInstance) return app;
-        return { ...app, id: uniqueWindowId(app.id), sourceAppId: app.id };
+        const windowApp = {
+            ...app,
+            sourceAppId: restoredState?.sourceAppId || app.sourceAppId || app.id,
+            navigationName: app.navigationName || app.name,
+        };
+        if (restoredState) return { ...windowApp, id: restoredState.appId || app.id };
+        if (!app.multiInstance) return windowApp;
+        return { ...windowApp, id: uniqueWindowId(app.id) };
     }
 
     function openWindow(inputApp, restoredState = null) {
@@ -1664,7 +1685,7 @@
         win.innerHTML = `
             <header class="desktop-window-titlebar">
                 <div class="desktop-window-title">
-                    <span class="desktop-window-icon">${app.icon ? `<img alt="" draggable="false" src="${escapeHtml(app.icon)}">` : escapeHtml(app.name.slice(0, 1))}</span>
+                    <span class="desktop-window-icon">${app.icon ? `<img class="desktop-app-glyph" alt="" draggable="false" src="${escapeHtml(app.icon)}">` : escapeHtml(app.name.slice(0, 1))}</span>
                     <span class="desktop-window-title-text"><strong data-window-title>${escapeHtml(app.name)}</strong><small data-window-subtitle hidden></small></span>
                 </div>
                 <div class="desktop-window-actions">
@@ -1688,7 +1709,7 @@
         const task = document.createElement('button');
         task.type = 'button';
         task.className = `desktop-task-button${win.classList.contains('is-minimized') ? ' is-minimized' : ' is-active'}`;
-        task.innerHTML = `${app.icon ? `<span class="desktop-task-icon"><img alt="" src="${escapeHtml(app.icon)}"></span>` : '<span class="desktop-task-icon" aria-hidden="true"></span>'}<span data-task-title>${escapeHtml(app.name)}</span>`;
+        task.innerHTML = `${app.icon ? `<span class="desktop-task-icon"><img class="desktop-app-glyph" alt="" src="${escapeHtml(app.icon)}"></span>` : '<span class="desktop-task-icon" aria-hidden="true"></span>'}<span data-task-title>${escapeHtml(app.name)}</span>`;
         task.title = app.name;
         task.setAttribute('aria-label', app.name);
         task.setAttribute('aria-pressed', win.classList.contains('is-minimized') ? 'false' : 'true');
@@ -1774,9 +1795,10 @@
         iframe.className = 'desktop-window-iframe';
         iframe.title = app.name;
         iframe.src = absoluteHref;
-        // Chromium enforces iframe fullscreen through Permissions Policy. Firefox currently
-        // permits this without an explicit declaration, which hid the missing permission.
-        iframe.allow = 'fullscreen';
+        // Chromium enforces these capabilities through Permissions Policy at both the
+        // top-level response and iframe boundary. Firefox's looser handling used to hide the
+        // missing camera/microphone delegation for Talk.
+        iframe.allow = 'camera; microphone; fullscreen';
         iframe.setAttribute('allowfullscreen', '');
         iframe.loading = 'eager';
         iframe.dataset.desktopCreatedAt = String(Date.now());
@@ -2115,6 +2137,7 @@
         try {
             const doc = iframe.contentDocument;
             if (!doc) return;
+            applyEmbeddedIconContrast(doc);
             if (doc.documentElement?.dataset.desktopChromePrimed !== 'true') {
                 doc.documentElement.dataset.desktopChromePrimed = 'true';
                 const earlyStyle = doc.createElement('style');
@@ -2553,10 +2576,25 @@
         };
     }
 
+    function restoredHref(href, fallback) {
+        if (!href) return fallback;
+        try {
+            const saved = new URL(href, window.location.origin);
+            if (window.location.protocol === 'https:' && saved.protocol === 'http:' && saved.hostname === window.location.hostname) {
+                saved.protocol = 'https:';
+                saved.host = window.location.host;
+            }
+            return saved.toString();
+        } catch (error) {
+            return fallback;
+        }
+    }
+
     async function restoreWindows(apps) {
         const byId = new Map(apps.map((app) => [app.id, app]));
         const registered = new Set(apps.map((app) => app.id));
         let dropped = false;
+        let migrated = false;
         for (const item of loadState().windows || []) {
             // App window whose app was removed or disabled → don't restore.
             if (item.appWindow && !registered.has(item.sourceAppId || item.appId)) { dropped = true; continue; }
@@ -2566,12 +2604,14 @@
                 if (!ok) { dropped = true; continue; }
             }
             const base = byId.get(item.sourceAppId || item.appId);
+            const migratedHref = restoredHref(item.href, base?.href || item.href || '');
+            if (migratedHref !== (item.href || '')) migrated = true;
             // Registered apps keep their fresh metadata (icon/name) but reopen at the LAST url
             // the window was on, not the canonical app url.
-            const app = base ? { ...base, href: item.href || base.href } : reconstructApp(item);
+            const app = base ? { ...base, href: migratedHref } : reconstructApp({ ...item, href: migratedHref });
             openWindow(app, item);
         }
-        if (dropped) saveState(); // persist the pruned set so it stays pruned
+        if (dropped || migrated) saveState(); // persist pruning and HTTP-to-HTTPS migration
     }
 
     function updateClock() {
@@ -2964,7 +3004,7 @@
             el.dataset.desktopItemSignature = JSON.stringify(item);
             if (item.special) el.dataset.special = item.special;
             const visual = item.kind === 'app'
-                ? `<span class="desktop-app-shortcut-circle"><img src="${escapeHtml(item.icon || '')}" alt="" draggable="false"></span>`
+                ? `<span class="desktop-app-shortcut-circle"><img class="desktop-app-glyph" src="${escapeHtml(item.icon || '')}" alt="" draggable="false"></span>`
                 : (item.special
                     ? (item.svg || `<img src="${item.iconUrl}" alt="" draggable="false"${item.iconFallback ? ` data-fallback="${escapeHtml(item.iconFallback)}"` : ''}>`)
                     : favVisual(item));
@@ -3083,7 +3123,9 @@
                 openExternalWindow({ appId: `${idPrefix}-${Date.now()}`, title: t('Desktop Files'), subtitle: dir, href: url, icon });
             } else {
                 const url = OC.generateUrl('/apps/files/') + '?dir=' + encodeURIComponent(dir);
-                openExternalWindow({ appId: `${idPrefix}-${Date.now()}`, title: t('Files'), subtitle: dir, href: url, icon: '/core/img/logo/logo.svg' });
+                const filesApp = launcherApps.find((app) => app.id === 'files' || /\/apps\/files(?:\/|$)/.test(app.href || ''));
+                const icon = filesApp?.icon || '/apps/files/img/app.svg';
+                openExternalWindow({ appId: `${idPrefix}-${Date.now()}`, title: t('Files'), subtitle: dir, href: url, icon });
             }
         }
 

@@ -146,11 +146,13 @@ class PageController extends Controller {
         $csp->addAllowedFrameDomain('https:');
         $csp->addAllowedFrameDomain('http:');
         $response->setContentSecurityPolicy($csp);
-        // Chromium requires the top-level document to delegate fullscreen through every
-        // iframe in the chain (Desktop -> External Sites -> Jellyfin). Nextcloud still emits
-        // both the legacy and current policy headers, so both must permit that delegation.
-        $response->addHeader('Feature-Policy', "autoplay 'self';camera 'none';fullscreen *;geolocation 'none';microphone 'none';payment 'none'");
-        $response->addHeader('Permissions-Policy', 'fullscreen=*');
+        // Chromium requires the top-level document to delegate protected capabilities to
+        // Desktop's app iframes. Keep camera and microphone same-origin-only so Talk works
+        // without exposing either device to promoted cross-origin External Sites frames.
+        // Nextcloud still emits both the legacy and current policy headers, so keep them in
+        // agreement while retaining the existing cross-origin fullscreen delegation.
+        $response->addHeader('Feature-Policy', "autoplay 'self';camera 'self';fullscreen *;geolocation 'none';microphone 'self';payment 'none'");
+        $response->addHeader('Permissions-Policy', 'camera=(self), microphone=(self), fullscreen=*');
         return $response;
     }
 }
